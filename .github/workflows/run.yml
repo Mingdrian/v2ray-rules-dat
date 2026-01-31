@@ -33,38 +33,34 @@ jobs:
         shell: bash
 
       - name: Checkout the "hidden" branch of this repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
+          repository: Loyalsoldier/v2ray-rules-dat
           ref: hidden
 
       - name: Checkout Loyalsoldier/domain-list-custom
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: Loyalsoldier/domain-list-custom
           path: custom
 
       - name: Checkout v2fly/domain-list-community
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: v2fly/domain-list-community
           path: community
 
       - name: Checkout cokebar/gfwlist2dnsmasq
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: cokebar/gfwlist2dnsmasq
           path: gfwlist2dnsmasq
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: ./custom/go.mod
           cache-dependency-path: ./custom/go.sum
-
-      - name: Get geoip.dat relative files
-        run: |
-          wget https://github.com/Loyalsoldier/geoip/raw/release/geoip.dat
-          wget https://github.com/Loyalsoldier/geoip/raw/release/geoip.dat.sha256sum
 
       - name: Generate GFWList domains
         run: |
@@ -74,8 +70,12 @@ jobs:
 
       - name: Get and add direct domains into temp-direct.txt file
         run: |
-          curl -sSL $CHINA_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "$1\n"' > temp-direct.txt
-          curl -sSL ${CUSTOM_DIRECT} | perl -ne '/^(domain):([^:]+)(\n$|:@.+)/ && print "$2\n"' >> temp-direct.txt
+          if curl -sSL https://static-file-global.353355.xyz/rules/cn-additional-list.txt | perl -ne '/^((?=^.{1,255})[a-zA-Z0-9][-_a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-_a-zA-Z0-9]{0,62})*)/ && print "$1\n"' > temp-direct.txt; then
+            curl -sSL https://github.com/xmdhs/cn-domain-list/raw/refs/heads/rule-set/ext-cn-list.yaml | perl -ne '/(?=^.{1,255})^- \+\.([a-zA-Z0-9][-_a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-_a-zA-Z0-9]{0,62})*)/ && print "$1\n"' >> temp-direct.txt
+          else
+            curl -sSL $CHINA_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "$1\n"' > temp-direct.txt
+            curl -sSL ${CUSTOM_DIRECT} | perl -ne '/^(domain):([^:]+)(\n$|:@.+)/ && print "$2\n"' >> temp-direct.txt
+          fi
 
       - name: Get and add proxy domains into temp-proxy.txt file
         run: |
@@ -151,22 +151,39 @@ jobs:
           cp ./community/data/category-ads-all reject-list.txt
           awk '{print "0.0.0.0 " $0}' reject-list.txt > hosts
 
-      - name: Create `china-list`、`google-cn`、`apple-cn`、`gfw` lists
+      - name: Create `china-list`、`google-cn`、`apple-cn`、`microsoft-cn`、`gfw` lists
         run: |
           curl -sSL $CHINA_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "$1\n"' > ./community/data/china-list
-          curl -sSL $CHINA_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "$1\n"' > china-list.txt
+          cp -f ./community/data/china-list china-list.txt
           curl -sSL $GOOGLE_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > ./community/data/google-cn
-          curl -sSL $GOOGLE_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > google-cn.txt
+          cp -f ./community/data/google-cn google-cn.txt
           curl -sSL $APPLE_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > ./community/data/apple-cn
-          curl -sSL $APPLE_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > apple-cn.txt
+          cp -f ./community/data/apple-cn apple-cn.txt
+          curl -sSL https://ruleset.skk.moe/List/non_ip/microsoft_cdn.conf | perl -ne 'if (/^DOMAIN,(?!.*skk\.moe)(.+)/) { print "full:$1\n"} if (/^DOMAIN-SUFFIX,(.+)/) {print "$1\n"}' > ./community/data/microsoft-cn
+          cp -f ./community/data/microsoft-cn microsoft-cn.txt
           cat ./gfwlist2dnsmasq/temp-gfwlist.txt | perl -ne '/^((?=^.{3,255})[a-zA-Z0-9][-_a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-_a-zA-Z0-9]{0,62})+)/ && print "$1\n"' >> ./community/data/gfw
           cat ./community/data/gfw | sort --ignore-case -u > gfw.txt
           curl -sSL $WIN_SPY | grep "0.0.0.0" | awk '{print $2}' > ./community/data/win-spy
-          curl -sSL $WIN_SPY | grep "0.0.0.0" | awk '{print $2}' > win-spy.txt
+          cp -f ./community/data/win-spy win-spy.txt
           curl -sSL $WIN_UPDATE | grep "0.0.0.0" | awk '{print $2}' > ./community/data/win-update
-          curl -sSL $WIN_UPDATE | grep "0.0.0.0" | awk '{print $2}' > win-update.txt
+          cp -f ./community/data/win-update win-update.txt
           curl -sSL $WIN_EXTRA | grep "0.0.0.0" | awk '{print $2}' > ./community/data/win-extra
-          curl -sSL $WIN_EXTRA | grep "0.0.0.0" | awk '{print $2}' > win-extra.txt
+          cp -f ./community/data/win-extra win-extra.txt
+
+      - name: Build geosite-lite.dat file
+        run: |
+          cd custom || exit 1
+          data="../community/data"
+          date_lite="../community/data_lite"
+          mkdir -p $date_lite
+          lists="cn geolocation-!cn gfw private apple-cn google-cn microsoft-cn"
+          echo "FILES=$lists" >> $GITHUB_ENV
+          export_lists="$(echo $lists | sed 's/ /,/g')"
+          for i in $lists; do
+            cp -rf $data/$i $date_lite/
+          done
+          go run ./ -datapath=$date_lite -datname geosite-lite.dat -exportlists "$export_lists"
+          sha256sum publish/geosite-lite.dat > publish/geosite-lite.dat.sha256sum
 
       - name: Build geosite.dat file
         run: |
@@ -174,54 +191,16 @@ jobs:
           go run ./ --datapath=../community/data
           sha256sum publish/geosite.dat > publish/geosite.dat.sha256sum
 
-      - name: Checkout CHIZI-0618/sing-geosite
-        uses: actions/checkout@v4
-        with:
-          repository: CHIZI-0618/sing-geosite
-          path: sing-geosite
-
-      - name: Build geosite.db and srs files
-        env:
-          NO_SKIP: true
-        run: |
-          cd sing-geosite || exit 1
-          cp ../custom/publish/geosite.dat ./
-          go run -v . geosite.dat geosite.db singbox_rule_set
-          sha256sum geosite.db > geosite.db.sha256sum
-
-      - name: Checkout SagerNet/sing-geoip
-        uses: actions/checkout@v4
-        with:
-          repository: SagerNet/sing-geoip
-          path: sing-geoip
-
-      - name: Build geoip.db and srs files
-        env:
-          NO_SKIP: true
-        run: |
-          cd sing-geoip || exit 1
-          sed -i 's/Dreamacro\/maxmind-geoip/Loyalsoldier\/geoip/g' main.go
-          go run -v .
-          sha256sum geoip.db > geoip.db.sha256sum
-
       - name: Move files
         run: |
-          mkdir -p publish/singbox_rule_set
-          mkdir -p publish/singbox_ip_rule_set
-          install -Dp ./geoip.dat ./publish/geoip.dat
-          install -Dp ./geoip.dat.sha256sum ./publish/geoip.dat.sha256sum
           install -Dp ./custom/publish/geosite.dat ./publish/geosite.dat
           install -Dp ./custom/publish/geosite.dat.sha256sum ./publish/geosite.dat.sha256sum
-          install -Dp ./sing-geosite/geosite.db ./publish/geosite.db
-          install -Dp ./sing-geosite/geosite.db.sha256sum ./publish/geosite.db.sha256sum
-          install -Dp ./sing-geosite/singbox_rule_set/* ./publish/singbox_rule_set/
-          install -Dp ./sing-geoip/geoip.db ./publish/geoip.db
-          install -Dp ./sing-geoip/geoip.db.sha256sum ./publish/geoip.db.sha256sum
-          install -Dp ./sing-geoip/rule-set/* ./publish/singbox_ip_rule_set/
-          install -p {proxy,direct,reject}-tld-list.txt ./publish/
-          install -p {proxy,direct,reject}-list.txt ./publish/
-          install -p {china-list,apple-cn,google-cn,gfw,win-spy,win-update,win-extra}.txt ./publish/
-          install -p hosts ./publish/hosts
+          install -Dp ./custom/publish/geosite-lite.dat ./publish/geosite-lite.dat
+          install -Dp ./custom/publish/geosite-lite.dat.sha256sum ./publish/geosite-lite.dat.sha256sum
+          mkdir -p ./publish/Lists
+          for i in $FILES; do
+            install -p ./custom/publish/$i.txt ./publish/Lists/
+          done
 
       - name: Git push assets to "release" branch
         run: |
@@ -234,3 +213,12 @@ jobs:
           git add .
           git commit -m "Update Release"
           git push -f -u origin release
+
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 3
+          keep_minimum_runs: 3
+          use_daily_retention: true
