@@ -33,38 +33,40 @@ jobs:
         shell: bash
 
       - name: Checkout the "hidden" branch of this repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
+          repository: Loyalsoldier/v2ray-rules-dat
           ref: hidden
 
       - name: Checkout Loyalsoldier/domain-list-custom
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Loyalsoldier/domain-list-custom
           path: custom
 
       - name: Checkout v2fly/domain-list-community
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: v2fly/domain-list-community
           path: community
 
+      - name: Checkout MetaCubeX/meta-rules-converter
+        uses: actions/checkout@v7
+        with:
+          repository: MetaCubeX/meta-rules-converter
+          path: convert
+
       - name: Checkout cokebar/gfwlist2dnsmasq
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: cokebar/gfwlist2dnsmasq
           path: gfwlist2dnsmasq
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: ./custom/go.mod
           cache-dependency-path: ./custom/go.sum
-
-      - name: Get geoip.dat relative files
-        run: |
-          wget https://github.com/Loyalsoldier/geoip/raw/release/geoip.dat
-          wget https://github.com/Loyalsoldier/geoip/raw/release/geoip.dat.sha256sum
 
       - name: Generate GFWList domains
         run: |
@@ -74,8 +76,12 @@ jobs:
 
       - name: Get and add direct domains into temp-direct.txt file
         run: |
-          curl -sSL $CHINA_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "$1\n"' > temp-direct.txt
-          curl -sSL ${CUSTOM_DIRECT} | perl -ne '/^(domain):([^:]+)(\n$|:@.+)/ && print "$2\n"' >> temp-direct.txt
+          if curl -sSL https://static-file-global.353355.xyz/rules/cn-additional-list.txt | perl -ne '/^((?=^.{1,255})[a-zA-Z0-9][-_a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-_a-zA-Z0-9]{0,62})*)/ && print "$1\n"' > temp-direct.txt; then
+            curl -sSL https://github.com/xmdhs/cn-domain-list/raw/refs/heads/rule-set/ext-cn-list.yaml | perl -ne '/(?=^.{1,255})^- \+\.([a-zA-Z0-9][-_a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-_a-zA-Z0-9]{0,62})*)/ && print "$1\n"' >> temp-direct.txt
+          else
+            curl -sSL $CHINA_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "$1\n"' > temp-direct.txt
+            curl -sSL ${CUSTOM_DIRECT} | perl -ne '/^(domain):([^:]+)(\n$|:@.+)/ && print "$2\n"' >> temp-direct.txt
+          fi
 
       - name: Get and add proxy domains into temp-proxy.txt file
         run: |
@@ -84,14 +90,25 @@ jobs:
           curl -sSL $APPLE_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "$1\n"' >> temp-proxy.txt
           curl -sSL ${CUSTOM_PROXY} | grep -Ev ":@cn" | perl -ne '/^(domain):([^:]+)(\n$|:@.+)/ && print "$2\n"' >> temp-proxy.txt
 
+      - name: Create `AdGuard Home` lists
+        run: |
+          curl -sSL https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/main/AWAvenue-Ads-Rule.txt | grep -vE '^[\[!]' > AdGuardHome.txt
+          curl -sSL https://raw.githubusercontent.com/Cats-Team/AdRules/main/dns.txt | grep -vE '^[\[!]' >> AdGuardHome.txt
+          curl -sSL https://raw.githubusercontent.com/Sereinfy/Adrules/main/rules/adblockdns.txt | grep -vE '^[\[!]' >> AdGuardHome.txt
+          sort -u AdGuardHome.txt -o AdGuardHome.txt
+
       - name: Get and add reject domains into temp-reject.txt file
         run: |
-          curl -sSL $EASYLISTCHINA_EASYLIST_REJECT_URL | perl -ne '/^\|\|([-_0-9a-zA-Z]+(\.[-_0-9a-zA-Z]+){1,64})\^$/ && print "$1\n"' | perl -ne 'print if not /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/' > temp-reject.txt
-          curl -sSL $EASYPRIVACY_REJECT_URL | perl -ne '/^\|\|([-_0-9a-zA-Z]+(\.[-_0-9a-zA-Z]+){1,64})\^$/ && print "$1\n"' | perl -ne 'print if not /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/' >> temp-reject.txt
-          curl -sSL $ADGUARD_DNS_REJECT_URL | perl -ne '/^\|\|([-_0-9a-zA-Z]+(\.[-_0-9a-zA-Z]+){1,64})\^$/ && print "$1\n"' | perl -ne 'print if not /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/' >> temp-reject.txt
-          curl -sSL $PETERLOWE_REJECT_URL | perl -ne '/^127\.0\.0\.1\s([-_0-9a-zA-Z]+(\.[-_0-9a-zA-Z]+){1,64})$/ && print "$1\n"' >> temp-reject.txt
-          curl -sSL $DANPOLLOCK_REJECT_URL | perl -ne '/^127\.0\.0\.1\s([-_0-9a-zA-Z]+(\.[-_0-9a-zA-Z]+){1,64})/ && print "$1\n"' | sed '1d' >> temp-reject.txt
-          curl -sSL $ANTIAD_DOMAINS_URL | perl -ne '/^((?=^.{3,255})[a-zA-Z0-9][-_a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-_a-zA-Z0-9]{0,62})+)/ && print "$1\n"' >> temp-reject.txt
+          if [ -f AdGuardHome.txt ]; then
+            cat AdGuardHome.txt | perl -ne '/^\|\|([-_0-9a-zA-Z]+(\.[-_0-9a-zA-Z]+){1,64})\^$/ && print "$1\n"' | perl -ne 'print if not /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/' > temp-reject.txt
+          else
+            curl -sSL $EASYLISTCHINA_EASYLIST_REJECT_URL | perl -ne '/^\|\|([-_0-9a-zA-Z]+(\.[-_0-9a-zA-Z]+){1,64})\^$/ && print "$1\n"' | perl -ne 'print if not /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/' > temp-reject.txt
+            curl -sSL $EASYPRIVACY_REJECT_URL | perl -ne '/^\|\|([-_0-9a-zA-Z]+(\.[-_0-9a-zA-Z]+){1,64})\^$/ && print "$1\n"' | perl -ne 'print if not /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/' >> temp-reject.txt
+            curl -sSL $ADGUARD_DNS_REJECT_URL | perl -ne '/^\|\|([-_0-9a-zA-Z]+(\.[-_0-9a-zA-Z]+){1,64})\^$/ && print "$1\n"' | perl -ne 'print if not /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/' >> temp-reject.txt
+            curl -sSL $PETERLOWE_REJECT_URL | perl -ne '/^127\.0\.0\.1\s([-_0-9a-zA-Z]+(\.[-_0-9a-zA-Z]+){1,64})$/ && print "$1\n"' >> temp-reject.txt
+            curl -sSL $DANPOLLOCK_REJECT_URL | perl -ne '/^127\.0\.0\.1\s([-_0-9a-zA-Z]+(\.[-_0-9a-zA-Z]+){1,64})/ && print "$1\n"' | sed '1d' >> temp-reject.txt
+            curl -sSL $ANTIAD_DOMAINS_URL | perl -ne '/^((?=^.{3,255})[a-zA-Z0-9][-_a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-_a-zA-Z0-9]{0,62})+)/ && print "$1\n"' >> temp-reject.txt
+          fi
 
       - name: Reserve `full`, `regexp` and `keyword` type of rules from custom lists to "reserve" files
         run: |
@@ -154,19 +171,50 @@ jobs:
       - name: Create `china-list`、`google-cn`、`apple-cn`、`gfw` lists
         run: |
           curl -sSL $CHINA_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "$1\n"' > ./community/data/china-list
-          curl -sSL $CHINA_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "$1\n"' > china-list.txt
+          cp -f ./community/data/china-list china-list.txt
           curl -sSL $GOOGLE_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > ./community/data/google-cn
-          curl -sSL $GOOGLE_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > google-cn.txt
+          cp -f ./community/data/google-cn google-cn.txt
           curl -sSL $APPLE_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > ./community/data/apple-cn
-          curl -sSL $APPLE_DOMAINS_URL | perl -ne '/^server=\/([^\/]+)\// && print "full:$1\n"' > apple-cn.txt
+          cp -f ./community/data/apple-cn apple-cn.txt
           cat ./gfwlist2dnsmasq/temp-gfwlist.txt | perl -ne '/^((?=^.{3,255})[a-zA-Z0-9][-_a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-_a-zA-Z0-9]{0,62})+)/ && print "$1\n"' >> ./community/data/gfw
           cat ./community/data/gfw | sort --ignore-case -u > gfw.txt
           curl -sSL $WIN_SPY | grep "0.0.0.0" | awk '{print $2}' > ./community/data/win-spy
-          curl -sSL $WIN_SPY | grep "0.0.0.0" | awk '{print $2}' > win-spy.txt
+          cp -f ./community/data/win-spy win-spy.txt
           curl -sSL $WIN_UPDATE | grep "0.0.0.0" | awk '{print $2}' > ./community/data/win-update
-          curl -sSL $WIN_UPDATE | grep "0.0.0.0" | awk '{print $2}' > win-update.txt
+          cp -f ./community/data/win-update win-update.txt
           curl -sSL $WIN_EXTRA | grep "0.0.0.0" | awk '{print $2}' > ./community/data/win-extra
-          curl -sSL $WIN_EXTRA | grep "0.0.0.0" | awk '{print $2}' > win-extra.txt
+          cp -f ./community/data/win-extra win-extra.txt
+          
+      - name: Create other lists
+        run: |
+          curl -sSL https://ruleset.skk.moe/List/non_ip/microsoft_cdn.conf | perl -ne 'if (/^DOMAIN,(?!.*skk\.moe)(.+)/) { print "full:$1\n"} if (/^DOMAIN-SUFFIX,(.+)/) {print "$1\n"}' > ./community/data/microsoft-cn
+          cp -f ./community/data/microsoft-cn microsoft-cn.txt
+
+          files=(
+              'ai https://github.com/ConnersHua/RuleGo/raw/refs/heads/master/Surge/Ruleset/Extra/AI.list'
+              'httpdns https://github.com/VirgilClyne/GetSomeFries/raw/refs/heads/main/ruleset/HTTPDNS.Block.list'
+              'pcdn https://github.com/uselibrary/PCDN/raw/refs/heads/main/pcdn.list'
+          )
+
+          for file in "${files[@]}"; do
+              set -- $file
+              curl -fsSL "$2" | awk '{ gsub(/[[:cntrl:]]/, "", $0) } { gsub(/[^:]\/\/.*/, "", $0) } { gsub(/,\s+/, ",", $0) } /^\s*[#;]/ { next } /^$/ { next } { print $0 } END { print "" }' | perl -ne 'if (/^DOMAIN,(.+)/) { print "full:$1\n"} if (/^DOMAIN-SUFFIX,(.+)/) {print "domain:$1\n"} if (/^DOMAIN-REGEX,(.+)/) { print "regexp:$1\n"}' > ./community/data/$1 || { echo "Download Failed: $1"; exit 1; }
+          done
+          cat ./community/data/category-httpdns-cn | sed -E 's/^([^ ]+) @ads/full:\1/' >> ./community/data/httpdns
+          sort --ignore-case ./community/data/httpdns -o ./community/data/httpdns
+
+          cp -f ./community/data/ai ai.txt
+          cp -f ./community/data/httpdns httpdns.txt
+          cp -f ./community/data/pcdn pcdn.txt
+
+          mkdir tmp
+          curl -sL https://github.com/vernesong/OpenClash/raw/refs/heads/master/luci-app-openclash/root/etc/openclash/custom/openclash_custom_fake_filter.list > ./tmp/fakeip-filter
+          cat ./tmp/fakeip-filter | perl -ne '/^[\+\*]\.([^\*]+)\n$/ && print "domain:$1\n"' | sort --ignore-case > ./community/data/fakeip-filter
+          cat ./tmp/fakeip-filter | awk '!/[#+* ]/' | sed 's/^/full:/' >> ./community/data/fakeip-filter
+          cat ./tmp/fakeip-filter | awk '/\*/ && !/#/ && !/\./' | sed -e 's/\*/\[\^\.\]\+/g' -e 's/^/regexp:\^/; s/$/\$/' >> ./community/data/fakeip-filter
+          cat ./tmp/fakeip-filter | awk '!/#/ && (/\.\*/ || / /)' | sed -e 's/ /\\s/g' -e 's/\./\\./g' -e 's/\*/\[\^\.\]\+/g' -e 's/^\+/\.\*/' -e 's/^/regexp:\^/; s/$/\$/' >> ./community/data/fakeip-filter
+          sort --ignore-case ./community/data/fakeip-filter -o ./community/data/fakeip-filter
+          cp -f ./community/data/fakeip-filter fakeip-filter.txt
 
       - name: Build geosite.dat file
         run: |
@@ -174,54 +222,71 @@ jobs:
           go run ./ --datapath=../community/data
           sha256sum publish/geosite.dat > publish/geosite.dat.sha256sum
 
-      - name: Checkout CHIZI-0618/sing-geosite
-        uses: actions/checkout@v4
-        with:
-          repository: CHIZI-0618/sing-geosite
-          path: sing-geosite
-
-      - name: Build geosite.db and srs files
-        env:
-          NO_SKIP: true
+      - name: Build geosite-lite.dat file
         run: |
-          cd sing-geosite || exit 1
-          cp ../custom/publish/geosite.dat ./
-          go run -v . geosite.dat geosite.db singbox_rule_set
-          sha256sum geosite.db > geosite.db.sha256sum
+          cd custom || exit 1
+          data="../community/data"
+          date_lite="../community/data_lite"
+          mkdir -p $date_lite
+          lists="ai apple-cn category-ads-all cn fakeip-filter geolocation-!cn gfw google-cn httpdns microsoft-cn pcdn private"
+          echo "FILES=$lists" >> $GITHUB_ENV
+          export_lists="$(echo $lists | sed 's/ /,/g')"
+          for i in $lists; do
+            cp -rf $data/$i $date_lite/
+          done
+          go run ./ -datapath=$date_lite -datname geosite-lite.dat -exportlists "$export_lists"
+          sha256sum publish/geosite-lite.dat > publish/geosite-lite.dat.sha256sum
 
-      - name: Checkout SagerNet/sing-geoip
-        uses: actions/checkout@v4
-        with:
-          repository: SagerNet/sing-geoip
-          path: sing-geoip
-
-      - name: Build geoip.db and srs files
-        env:
-          NO_SKIP: true
+      - name: Get geoip.dat relative files
         run: |
-          cd sing-geoip || exit 1
-          sed -i 's/Dreamacro\/maxmind-geoip/Loyalsoldier\/geoip/g' main.go
-          go run -v .
-          sha256sum geoip.db > geoip.db.sha256sum
+          wget -O geoip.dat https://github.com/Sereinfy/geoip/releases/download/mihomo/geoip-all.dat
+          sha256sum geoip.dat > geoip.dat.sha256sum
+          wget -O geoip-lite.dat https://github.com/Sereinfy/geoip/releases/download/mihomo/geoip.dat
+          sha256sum geoip-lite.dat > geoip-lite.dat.sha256sum
+
+      - name: Convert geo to sing-rule-set
+        run: |
+          mkdir -p sing-rule/geo/geosite && mkdir -p sing-rule/geo/geoip
+          cd convert
+          go run ./ geosite -f ../custom/publish/geosite.dat -o ../sing-rule/geo/geosite -t sing-box
+          go run ./ geoip -f ../geoip.dat -o ../sing-rule/geo/geoip -t sing-box
+
+      - name: Convert geo-lite to sing-rule-set
+        run: |
+          mkdir -p sing-rule/geo-lite/geosite && mkdir -p sing-rule/geo-lite/geoip
+          cd convert
+          go run ./ geosite -f ../custom/publish/geosite-lite.dat -o ../sing-rule/geo-lite/geosite -t sing-box
+          go run ./ geoip -f ../geoip-lite.dat -o ../sing-rule/geo-lite/geoip -t sing-box
+
+      - name: Convert geo to meta-rule-set
+        run: |
+          mkdir -p meta-rule/geo/geosite && mkdir -p meta-rule/geo/geoip
+          cd convert
+          go run ./ geosite -f ../custom/publish/geosite.dat -o ../meta-rule/geo/geosite
+          go run ./ geoip -f ../geoip.dat -o ../meta-rule/geo/geoip
+
+      - name: Convert geo-lite to meta-rule-set
+        run: |
+          mkdir -p meta-rule/geo-lite/geosite && mkdir -p meta-rule/geo-lite/geoip
+          cd convert
+          go run ./ geosite -f ../custom/publish/geosite-lite.dat -o ../meta-rule/geo-lite/geosite
+          go run ./ geoip -f ../geoip-lite.dat -o ../meta-rule/geo-lite/geoip
 
       - name: Move files
         run: |
-          mkdir -p publish/singbox_rule_set
-          mkdir -p publish/singbox_ip_rule_set
-          install -Dp ./geoip.dat ./publish/geoip.dat
-          install -Dp ./geoip.dat.sha256sum ./publish/geoip.dat.sha256sum
           install -Dp ./custom/publish/geosite.dat ./publish/geosite.dat
           install -Dp ./custom/publish/geosite.dat.sha256sum ./publish/geosite.dat.sha256sum
-          install -Dp ./sing-geosite/geosite.db ./publish/geosite.db
-          install -Dp ./sing-geosite/geosite.db.sha256sum ./publish/geosite.db.sha256sum
-          install -Dp ./sing-geosite/singbox_rule_set/* ./publish/singbox_rule_set/
-          install -Dp ./sing-geoip/geoip.db ./publish/geoip.db
-          install -Dp ./sing-geoip/geoip.db.sha256sum ./publish/geoip.db.sha256sum
-          install -Dp ./sing-geoip/rule-set/* ./publish/singbox_ip_rule_set/
-          install -p {proxy,direct,reject}-tld-list.txt ./publish/
-          install -p {proxy,direct,reject}-list.txt ./publish/
-          install -p {china-list,apple-cn,google-cn,gfw,win-spy,win-update,win-extra}.txt ./publish/
-          install -p hosts ./publish/hosts
+          install -Dp ./custom/publish/geosite-lite.dat ./publish/geosite-lite.dat
+          install -Dp ./custom/publish/geosite-lite.dat.sha256sum ./publish/geosite-lite.dat.sha256sum
+          install -Dp ./geoip.dat ./publish/geoip.dat
+          install -Dp ./geoip.dat.sha256sum ./publish/geoip.dat.sha256sum
+          install -Dp ./geoip-lite.dat ./publish/geoip-lite.dat
+          install -Dp ./geoip-lite.dat.sha256sum ./publish/geoip-lite.dat.sha256sum
+          mkdir -p ./publish/Lists
+          for i in $FILES; do
+            install -p ./custom/publish/$i.txt ./publish/Lists/
+          done
+          install -p ./AdGuardHome.txt ./publish/Lists/
 
       - name: Git push assets to "release" branch
         run: |
@@ -234,3 +299,36 @@ jobs:
           git add .
           git commit -m "Update Release"
           git push -f -u origin release
+
+      - name: Git push assets to "sing-rule" branch
+        run: |
+          cd sing-rule || exit 1
+          git init
+          git config --local user.email "github-action@users.noreply.github.com"
+          git config --local user.name "GitHub Action"
+          git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git branch -M sing
+          git add .
+          git commit -m "Update Release"
+          git push -f -u origin sing
+
+      - name: Git push assets to "meta-rule" branch
+        run: |
+          cd meta-rule || exit 1
+          git init
+          git config --local user.email "github-action@users.noreply.github.com"
+          git config --local user.name "GitHub Action"
+          git remote add origin "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git branch -M meta
+          git add .
+          git commit -m "Update Release"
+          git push -f -u origin meta
+
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 3
+          keep_minimum_runs: 3
+          use_daily_retention: true
